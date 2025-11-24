@@ -1,0 +1,98 @@
+# bot_chuya_auto.py
+import asyncio
+import time
+import random
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import openai
+
+# ========== НАСТРОЙКИ ==========
+TELEGRAM_TOKEN = "http://Flow.gpt5370080584.com"
+OPENAI_API_KEY = "Gangsta"
+IDLE_TIME = 3600  # 3600 секунд = 1 час, время простоя перед самостоятельным сообщением
+
+# Глобальные переменные
+CHAT_ID = None
+last_user_message_time = None  # для отслеживания последнего сообщения
+
+# Настройка OpenAI
+openai.api_key = OPENAI_API_KEY
+
+# ========== ФУНКЦИИ ==========
+def ask_chuya(prompt: str) -> str:
+    """
+    Возвращает ответ Чуя по характеру с помощью GPT.
+    """
+    system_prompt = (
+        "Ты — Чуя из 'Бродячих псов'. "
+        "Ты остроумен, дерзок, иногда груб, но по сути добрый к друзьям. "
+        "Отвечай коротко и по характеру Чуи."
+    )
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.8
+    )
+    return response.choices[0].message.content.strip()
+
+# Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global CHAT_ID, last_user_message_time
+    CHAT_ID = update.effective_chat.id
+    last_user_message_time = time.time()
+    await update.message.reply_text(
+        f"Привет, {update.effective_user.first_name}! Я Чуя 😎\n"
+        "Готов болтать и иногда писать сам, если ты долго молчишь."
+    )
+
+# Обработка сообщений пользователя
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global CHAT_ID, last_user_message_time
+    CHAT_ID = update.effective_chat.id
+    last_user_message_time = time.time()
+    user_text = update.message.text
+    chuya_response = ask_chuya(user_text)
+    await update.message.reply_text(chuya_response)
+
+# Проверка времени простоя и отправка сообщений
+async def chuya_idle_messages(bot: Bot):
+    global last_user_message_time
+    await asyncio.sleep(10)  # небольшой стартовый таймер
+    while True:
+        if CHAT_ID and last_user_message_time:
+            elapsed = time.time() - last_user_message_time
+            if elapsed >= IDLE_TIME:
+                # Пример сообщений от Чуи
+                prompts = [
+                    "Эй, скучно без тебя 😏",
+                    "Что там, не забыл про меня?",
+                    "Давай поболтаем, я скучаю!",
+                    "Не думай, что я пропустил твое молчание 😎"
+                ]
+                msg = random.choice(prompts)
+                # Можно пройти через GPT, чтобы было более живо
+                msg = ask_chuya(msg)
+                await bot.send_message(chat_id=CHAT_ID, text=msg)
+                last_user_message_time = time.time()  # обновляем время после отправки
+        await asyncio.sleep(60)  # проверка каждую минуту
+
+# ========== ОСНОВНАЯ ПРОГРАММА ==========
+async def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
+    # Обработчики
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Запуск проверки на простои
+    bot = app.bot
+    asyncio.create_task(chuya_idle_messages(bot))
+    
+    # Запуск бота
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
